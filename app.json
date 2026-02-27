@@ -50,7 +50,8 @@
         {
           "locationWhenInUsePermission": "Allow Rating to detect nearby connections"
         }
-      ]
+      ],
+      "expo-localization"
     ]
   }
 }

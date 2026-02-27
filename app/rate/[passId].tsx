@@ -6,11 +6,15 @@ import { BlurView } from 'expo-blur';
 import { useState, useRef, useEffect } from 'react';
 import { colors, spacing, fontSize, borderRadius, glassStyles } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
-import { useAuthStore } from '@/stores';
+import { useAuthStore, useSettingsStore } from '@/stores';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { translations } from '@/lib/i18n';
 
 export default function RatingScreen() {
     const { passId } = useLocalSearchParams<{ passId: string }>();
-    const { user, isBypass } = useAuthStore();
+    const { user } = useAuthStore();
+    const { language } = useSettingsStore();
+    const t = translations[language];
 
     const [rating, setRating] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -95,9 +99,14 @@ export default function RatingScreen() {
                         <View style={styles.starsContainer}>
                             {[1, 2, 3, 4, 5].map((star, index) => (
                                 <TouchableOpacity key={star} onPress={() => handleSelectRating(star)} activeOpacity={0.7}>
-                                    <Animated.Text style={[styles.star, { transform: [{ scale: scaleAnims[index] }], color: star <= rating ? colors.accent : 'rgba(0,0,0,0.05)' }]}>
-                                        ⭐
-                                    </Animated.Text>
+                                    <Animated.View style={{ transform: [{ scale: scaleAnims[index] }] }}>
+                                        <MaterialCommunityIcons
+                                            name={star <= rating ? "star" : "star-outline"}
+                                            size={44}
+                                            color={star <= rating ? colors.accent : 'rgba(0,0,0,0.06)'}
+                                            style={{ marginHorizontal: 4 }}
+                                        />
+                                    </Animated.View>
                                 </TouchableOpacity>
                             ))}
                         </View>

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, Alert, RefreshControl, Animated } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, Alert, RefreshControl, Animated, Modal, ScrollView } from 'react-native';
 import { ActivityIndicator, Button, IconButton } from 'react-native-paper';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,13 +11,21 @@ import { Connection } from '@/types';
 import { checkNearbyConnections } from '@/lib/proximity';
 import * as Location from 'expo-location';
 import * as Linking from 'expo-linking';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { translations } from '@/lib/i18n';
+import { useSettingsStore } from '@/stores';
 
 export default function HomeScreen() {
     const { user, setUser } = useAuthStore();
+    const { language, setLanguage, notifications, clearNotifications, addNotification } = useSettingsStore();
+    const t = translations[language];
+
     const { connections, pendingRequests, fetchConnections, fetchPendingRequests, acceptRequest, declineRequest, loading } = useConnectionsStore();
     const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [protocolAlert, setProtocolAlert] = useState<{ msg: string; sub: string } | null>(null);
+    const [showLangModal, setShowLangModal] = useState(false);
+    const [showNotifModal, setShowNotifModal] = useState(false);
     const fadeAnim = useState(new Animated.Value(0))[0];
 
     const showProtocolAlert = (msg: string, sub: string) => {
@@ -80,9 +88,14 @@ export default function HomeScreen() {
                     table: 'interaction_passes',
                     filter: `user_b=eq.${user.id}`
                 }, (payload: any) => {
-                    showProtocolAlert('PROTOCOL INITIATED', 'A new handshake encounter has been detected in your proximity.');
-                    // Still push to rate screen as it's an action required
-                    router.push(`/rate/${payload.new.id}`);
+                    addNotification({
+                        id: payload.new.id,
+                        type: 'rating_request',
+                        title: t.protocolInitiated,
+                        desc: t.protocolInitiatedDesc,
+                        timestamp: new Date().toISOString()
+                    });
+                    showProtocolAlert(t.protocolInitiated, t.protocolInitiatedDesc);
                 })
                 .subscribe();
 
@@ -96,7 +109,7 @@ export default function HomeScreen() {
                     filter: `ratee_id=eq.${user.id}`
                 }, async (payload: any) => {
                     if (payload.new && payload.new.revealed && !payload.old?.revealed) {
-                        showProtocolAlert('INDEX CALIBRATED', 'A new reputation record has been decrypted. Your Trust Index is updating.');
+                        showProtocolAlert(t.indexCalibrated, t.indexCalibratedDesc);
 
                         const { data: updatedUser } = await supabase.from('users').select('*').eq('id', user.id).single();
                         if (updatedUser) setUser(updatedUser);
@@ -257,13 +270,13 @@ export default function HomeScreen() {
 
                     <View style={styles.actionRowMini}>
                         <TouchableOpacity style={styles.actionBtnMini} onPress={() => handleCreatePass(item, 'meet')}>
-                            <Text style={styles.actionEmojiMini}>🤝</Text>
+                            <MaterialCommunityIcons name="handshake-outline" size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionBtnMini} onPress={() => handleCreatePass(item, 'call')}>
-                            <Text style={styles.actionEmojiMini}>📞</Text>
+                            <MaterialCommunityIcons name="phone-outline" size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionBtnMini} onPress={() => handleCreatePass(item, 'chat')}>
-                            <Text style={styles.actionEmojiMini}>💬</Text>
+                            <MaterialCommunityIcons name="chat-outline" size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -289,8 +302,17 @@ export default function HomeScreen() {
 
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.greeting}>REAL WORLD</Text>
-                    <Text style={styles.title}>Reputation</Text>
+                    <Text style={styles.greeting}>{t.greeting}</Text>
+                    <Text style={styles.title}>{t.title}</Text>
+                </View>
+                <View style={styles.headerActions}>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLangModal(true)}>
+                        <MaterialCommunityIcons name="translate" size={20} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => setShowNotifModal(true)}>
+                        <MaterialCommunityIcons name="bell-outline" size={20} color={colors.primary} />
+                        {(pendingRequests.length > 0 || notifications.length > 0) && <View style={styles.badge} />}
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -305,16 +327,20 @@ export default function HomeScreen() {
                 ListHeaderComponent={
                     pendingRequests.length > 0 ? (
                         <View style={styles.pendingSection}>
-                            <Text style={styles.sectionLabel}>INCOMING HANDSHAKES</Text>
+                            <Text style={styles.sectionLabel}>{t.incomingTitle}</Text>
                             {pendingRequests.map((req) => (
                                 <View key={req.id}>
                                     {renderPendingRequest({ item: req })}
                                 </View>
                             ))}
                             <View style={styles.sectionDivider} />
-                            <Text style={styles.sectionLabel}>YOUR CONNECTIONS</Text>
+                            <Text style={styles.sectionLabel}>{t.connectionsTitle}</Text>
                         </View>
-                    ) : null
+                    ) : (
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionLabel}>{t.connectionsTitle}</Text>
+                        </View>
+                    )
                 }
                 ListEmptyComponent={
                     loading ? (
@@ -322,12 +348,99 @@ export default function HomeScreen() {
                     ) : (
                         <View style={styles.emptyContainer}>
                             <Text style={styles.emptyEmoji}>🌊</Text>
-                            <Text style={styles.emptyTitle}>Liquid State</Text>
-                            <Text style={styles.emptyText}>Find humans to start building your collective score.</Text>
+                            <Text style={styles.emptyTitle}>{t.emptyState}</Text>
+                            <Text style={styles.emptyText}>{t.emptyDesc}</Text>
                         </View>
                     )
                 }
             />
+
+            <Modal
+                visible={showLangModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowLangModal(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowLangModal(false)}
+                >
+                    <View style={styles.modalContent}>
+                        <BlurView intensity={95} tint="light" style={StyleSheet.absoluteFill} />
+                        <Text style={styles.modalTitle}>{t.languageSelector}</Text>
+                        {[
+                            { id: 'uz', label: 'O\'zbekcha' },
+                            { id: 'ru', label: 'Русский' },
+                            { id: 'en', label: 'English' }
+                        ].map((lang) => (
+                            <TouchableOpacity
+                                key={lang.id}
+                                style={[styles.langBtn, language === lang.id && styles.langBtnActive]}
+                                onPress={() => {
+                                    setLanguage(lang.id as any);
+                                    setShowLangModal(false);
+                                }}
+                            >
+                                <Text style={[styles.langText, language === lang.id && styles.langTextActive]}>
+                                    {lang.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            <Modal
+                visible={showNotifModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowNotifModal(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowNotifModal(false)}
+                >
+                    <View style={styles.notifContent}>
+                        <BlurView intensity={95} tint="light" style={StyleSheet.absoluteFill} />
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Notifications</Text>
+                            <TouchableOpacity onPress={clearNotifications}>
+                                <Text style={styles.clearBtn}>Clear all</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {notifications.length === 0 && (
+                            <View style={styles.emptyNotif}>
+                                <MaterialCommunityIcons name="bell-off-outline" size={40} color={colors.textMuted} />
+                                <Text style={styles.emptyNotifText}>Zero signals detected.</Text>
+                            </View>
+                        )}
+
+                        <ScrollView style={styles.notifList}>
+                            {notifications.map((notif) => (
+                                <TouchableOpacity
+                                    key={notif.id}
+                                    style={styles.notifItem}
+                                    onPress={() => {
+                                        setShowNotifModal(false);
+                                        router.push(`/rate/${notif.id}`);
+                                    }}
+                                >
+                                    <View style={styles.notifIcon}>
+                                        <MaterialCommunityIcons name="handshake" size={20} color={colors.primary} />
+                                    </View>
+                                    <View style={styles.notifInfo}>
+                                        <Text style={styles.notifTitle}>{notif.title}</Text>
+                                        <Text style={styles.notifDesc}>{notif.desc}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -351,6 +464,33 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.md,
         marginTop: spacing.md,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    iconBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(14, 165, 233, 0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: spacing.sm,
+    },
+    badge: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: colors.error,
+        borderWidth: 1.5,
+        borderColor: '#fff',
     },
     greeting: {
         fontSize: 12,
@@ -362,6 +502,108 @@ const styles = StyleSheet.create({
         fontSize: 34,
         fontWeight: '900',
         color: colors.text,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: '80%',
+        backgroundColor: colors.background,
+        borderRadius: 24,
+        padding: spacing.xl,
+        overflow: 'hidden',
+        alignItems: 'center',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: colors.text,
+        marginBottom: spacing.lg,
+    },
+    langBtn: {
+        width: '100%',
+        paddingVertical: spacing.md,
+        borderRadius: 16,
+        alignItems: 'center',
+        marginBottom: spacing.sm,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.05)',
+    },
+    langBtnActive: {
+        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+        borderColor: colors.primary,
+    },
+    langText: {
+        fontSize: 16,
+        color: colors.textSecondary,
+        fontWeight: '700',
+    },
+    langTextActive: {
+        color: colors.primary,
+    },
+    notifContent: {
+        width: '90%',
+        maxHeight: '70%',
+        backgroundColor: colors.background,
+        borderRadius: 24,
+        padding: spacing.lg,
+        overflow: 'hidden',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: spacing.md,
+    },
+    clearBtn: {
+        fontSize: 12,
+        color: colors.primary,
+        fontWeight: '700',
+    },
+    notifList: {
+        maxHeight: 400,
+    },
+    notifItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.03)',
+    },
+    notifIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(14, 165, 233, 0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: spacing.md,
+    },
+    notifInfo: {
+        flex: 1,
+    },
+    notifTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    notifDesc: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    emptyNotif: {
+        alignItems: 'center',
+        paddingVertical: spacing.xl,
+    },
+    emptyNotifText: {
+        fontSize: 14,
+        color: colors.textMuted,
+        marginTop: spacing.md,
+        fontWeight: '600',
     },
     listContent: {
         paddingHorizontal: spacing.md,
@@ -385,12 +627,16 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.04)',
         marginVertical: spacing.lg,
     },
+    sectionHeader: {
+        marginBottom: spacing.xs,
+        marginTop: spacing.sm,
+    },
     pendingCard: {
         ...glassStyles.container,
         marginBottom: spacing.sm,
         padding: spacing.md,
-        backgroundColor: 'rgba(245, 158, 11, 0.04)',
-        borderColor: 'rgba(245, 158, 11, 0.2)',
+        backgroundColor: colors.glass,
+        borderColor: 'rgba(14, 165, 233, 0.2)',
     },
     pendingCardReflection: {
         position: 'absolute',
@@ -443,8 +689,8 @@ const styles = StyleSheet.create({
         ...glassStyles.container,
         marginBottom: spacing.sm,
         padding: spacing.sm,
-        backgroundColor: 'rgba(255, 255, 255, 0.45)',
-        borderColor: 'rgba(255, 255, 255, 0.95)',
+        backgroundColor: colors.glass,
+        borderColor: colors.glassBorder,
     },
     cardReflection: {
         position: 'absolute',

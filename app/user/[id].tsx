@@ -6,14 +6,18 @@ import { BlurView } from 'expo-blur';
 import { useState, useEffect } from 'react';
 import { colors, spacing, fontSize, borderRadius, glassStyles } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
-import { useAuthStore, useConnectionsStore } from '@/stores';
+import { useAuthStore, useConnectionsStore, useSettingsStore } from '@/stores';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { translations } from '@/lib/i18n';
 import { User, Connection } from '@/types';
 import { checkNearbyConnections, createGPSProximityPass } from '@/lib/proximity';
 
 export default function UserProfileScreen() {
-    const { id } = useLocalSearchParams<{ id: string }>();
-    const { user: currentUser, isBypass } = useAuthStore();
-    const { fetchConnections, blockUser } = useConnectionsStore();
+    const { id } = useLocalSearchParams();
+    const { user: currentUser } = useAuthStore();
+    const { language } = useSettingsStore();
+    const t = translations[language];
+    const { connections, fetchConnections, acceptRequest, blockUser } = useConnectionsStore();
 
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -176,32 +180,29 @@ export default function UserProfileScreen() {
                             {actionLoading ? (
                                 <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
                             ) : !connection ? (
-                                <Button mode="contained" onPress={handleConnect} style={styles.primaryBtn} labelStyle={styles.btnLabel}>
-                                    Connect Handshake
+                                <Button
+                                    mode="contained"
+                                    icon={() => <MaterialCommunityIcons name="handshake" size={18} color="#fff" />}
+                                    onPress={handleConnect}
+                                    style={styles.connectBtn}
+                                    loading={actionLoading}
+                                >
+                                    {t.connect}
                                 </Button>
                             ) : connection.status === 'pending' ? (
                                 connection.user_b === currentUser?.id ? (
                                     <Button
                                         mode="contained"
                                         onPress={async () => {
-                                            if (!currentUser) return;
+                                            if (!currentUser || !connection) return;
                                             setActionLoading(true);
-                                            try {
-                                                const { error } = await supabase.from('connections').update({ status: 'accepted' }).eq('id', connection.id);
-                                                if (error) throw error;
-                                                fetchConnections(currentUser.id);
-                                                setConnection({ ...connection, status: 'accepted' });
-                                                Alert.alert('Protocol Sync', 'Handshake accepted.');
-                                            } catch (err: any) {
-                                                Alert.alert('Error', err.message);
-                                            } finally {
-                                                setActionLoading(false);
-                                            }
+                                            await acceptRequest(connection.id);
+                                            fetchConnections(currentUser.id);
+                                            setActionLoading(false);
                                         }}
-                                        style={[styles.primaryBtn, { backgroundColor: colors.success }]}
-                                        labelStyle={styles.btnLabel}
+                                        style={styles.acceptBtn}
                                     >
-                                        Accept Handshake
+                                        {t.accept}
                                     </Button>
                                 ) : (
                                     <View style={styles.statusBox}>
@@ -330,4 +331,16 @@ const styles = StyleSheet.create({
     passBtn: { flex: 1, alignItems: 'center', padding: spacing.sm, backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 14, marginHorizontal: 4, borderWidth: 1.2, borderColor: 'rgba(255,255,255,0.9)' },
     passEmoji: { fontSize: 22, marginBottom: 2 },
     passLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
+    connectBtn: {
+        borderRadius: 16,
+        paddingVertical: 8,
+        backgroundColor: colors.primary,
+        elevation: 0,
+    },
+    acceptBtn: {
+        borderRadius: 16,
+        paddingVertical: 8,
+        backgroundColor: colors.success,
+        elevation: 0,
+    },
 });

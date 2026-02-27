@@ -7,10 +7,10 @@ export const colors = {
     background: '#FFFFFF',
     backgroundSecondary: '#F8FAFC',
 
-    // Liquid Glass surfaces (Glossy)
-    glass: 'rgba(255, 255, 255, 0.45)',
-    glassLiquid: 'rgba(255, 255, 255, 0.7)',
-    glassBorder: 'rgba(255, 255, 255, 0.95)', // Bright reflective edge
+    // Liquid Glass surfaces (Glossy & Subtle)
+    glass: 'rgba(255, 255, 255, 0.12)',
+    glassLiquid: 'rgba(255, 255, 255, 0.25)',
+    glassBorder: 'rgba(255, 255, 255, 0.4)', // Subtle reflective edge
 
     // Fluid Accents
     primary: '#0EA5E9',
@@ -78,15 +78,7 @@ export const glassStyles: Record<string, any> = {
         elevation: 5,
     },
     reflection: {
-        position: 'absolute' as const,
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '45%' as any,
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        borderBottomLeftRadius: 100,
-        borderBottomRightRadius: 100,
-        transform: [{ scaleX: 1.5 }],
+        display: 'none',
     },
     glow: {
         shadowColor: colors.primary,

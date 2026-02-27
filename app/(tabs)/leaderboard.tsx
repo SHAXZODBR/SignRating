@@ -6,11 +6,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, fontSize, borderRadius, glassStyles } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
 import { LeaderboardEntry } from '@/types';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { translations } from '@/lib/i18n';
+import { useSettingsStore } from '@/stores';
 
 export default function LeaderboardScreen() {
     const [leaders, setLeaders] = useState<LeaderboardEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const { language } = useSettingsStore();
+    const t = translations[language];
 
     useEffect(() => {
         fetchLeaderboard();
@@ -50,9 +55,15 @@ export default function LeaderboardScreen() {
                 <View style={styles.cardReflection} />
 
                 <View style={styles.rankBox}>
-                    <Text style={[styles.rankText, isTop3 && { color: colors_top[index] }]}>
-                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
-                    </Text>
+                    {index === 0 ? (
+                        <MaterialCommunityIcons name="trophy" size={24} color="#F59E0B" />
+                    ) : index === 1 ? (
+                        <MaterialCommunityIcons name="trophy-outline" size={20} color="#94A3B8" />
+                    ) : index === 2 ? (
+                        <MaterialCommunityIcons name="trophy-variant-outline" size={18} color="#B45309" />
+                    ) : (
+                        <Text style={styles.rankText}>{index + 1}</Text>
+                    )}
                 </View>
 
                 <View style={styles.avatarWrapper}>
@@ -78,7 +89,7 @@ export default function LeaderboardScreen() {
 
             <View style={styles.header}>
                 <Text style={styles.topLabel}>LIQUID ELITE</Text>
-                <Text style={styles.title}>Global Trust</Text>
+                <Text style={styles.title}>{t.leaderboard}</Text>
             </View>
 
             <FlatList
@@ -117,8 +128,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: spacing.sm,
         marginBottom: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.45)',
-        borderColor: 'rgba(255, 255, 255, 0.95)',
+        backgroundColor: colors.glass,
+        borderColor: colors.glassBorder,
     },
     cardReflection: {
         position: 'absolute',

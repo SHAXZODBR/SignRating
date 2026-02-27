@@ -11,7 +11,7 @@ CREATE TABLE users (
   username TEXT UNIQUE,
   name TEXT,
   avatar_url TEXT,
-  big_score DECIMAL(3,2) DEFAULT 0,
+  big_score DECIMAL(3,2) DEFAULT 3.0,
   total_ratings INTEGER DEFAULT 0,
   latitude DOUBLE PRECISION,
   longitude DOUBLE PRECISION,
@@ -112,20 +112,33 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION auto_reveal_ratings()
 RETURNS TRIGGER AS $$
+DECLARE
+  ratee_ids UUID[];
+  target_id UUID;
 BEGIN
+  -- Check if both parties have rated the same pass
   IF (
     SELECT COUNT(DISTINCT rater_id) 
     FROM ratings 
     WHERE pass_id = NEW.pass_id
   ) >= 2 THEN
+    -- Reveal both ratings
     UPDATE ratings SET revealed = TRUE WHERE pass_id = NEW.pass_id;
     
-    UPDATE users SET 
-      big_score = calculate_user_score(id),
-      total_ratings = (SELECT COUNT(*) FROM ratings WHERE ratee_id = users.id AND revealed = TRUE)
-    WHERE id IN (
-      SELECT ratee_id FROM ratings WHERE pass_id = NEW.pass_id
-    );
+    -- Identify the users who need score updates (both participants in the pass)
+    SELECT ARRAY_AGG(DISTINCT ratee_id) INTO ratee_ids 
+    FROM ratings 
+    WHERE pass_id = NEW.pass_id;
+
+    -- Update each user's score ensuring it reflects the newly revealed ratings
+    FOREACH target_id IN ARRAY ratee_ids
+    LOOP
+      UPDATE users SET 
+        big_score = calculate_user_score(target_id),
+        total_ratings = (SELECT COUNT(*) FROM ratings WHERE ratee_id = target_id AND revealed = TRUE),
+        updated_at = NOW()
+      WHERE id = target_id;
+    END LOOP;
   END IF;
   
   RETURN NEW;
