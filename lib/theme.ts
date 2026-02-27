@@ -54,10 +54,11 @@ export const fontSize = {
 };
 
 export const borderRadius = {
-    sm: 6,
-    md: 16,
-    lg: 28, // Smoother liquid corners
-    xl: 40,
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 20, // More compact liquid corners
+    xl: 32,
     round: 999,
 };
 
@@ -66,15 +67,15 @@ export const glassStyles: Record<string, any> = {
     container: {
         backgroundColor: colors.glass,
         borderRadius: borderRadius.lg,
-        borderWidth: 1.5,
+        borderWidth: 1.2,
         borderColor: colors.glassBorder,
         overflow: 'hidden' as const,
-        // Premium High-Gloss Glow
+        // Refined Glow
         shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.15,
-        shadowRadius: 25,
-        elevation: 10,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.1,
+        shadowRadius: 15,
+        elevation: 5,
     },
     reflection: {
         position: 'absolute' as const,

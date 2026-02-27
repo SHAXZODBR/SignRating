@@ -4,7 +4,7 @@ import { NearbyUser, User } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
 // Proximity threshold in meters
-const PROXIMITY_THRESHOLD = 50;
+const PROXIMITY_THRESHOLD = 200;
 
 // Calculate distance between two coordinates (Haversine formula)
 export function calculateDistance(
@@ -29,8 +29,24 @@ export function calculateDistance(
 
 // Request location permissions
 export async function requestLocationPermission(): Promise<boolean> {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    return status === 'granted';
+    try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        return status === 'granted';
+    } catch (error) {
+        console.error('Error requesting location permission:', error);
+        return false;
+    }
+}
+
+// Check location permissions
+export async function checkLocationPermission(): Promise<boolean> {
+    try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        return status === 'granted';
+    } catch (error) {
+        console.error('Error checking location permission:', error);
+        return false;
+    }
 }
 
 // Get current location
@@ -48,46 +64,94 @@ export async function getCurrentLocation(): Promise<Location.LocationObject | nu
     }
 }
 
-// Check for nearby connected users
+// Update current user's location in the database
+export async function updateMyLocation(userId: string): Promise<void> {
+    try {
+        const location = await getCurrentLocation();
+        if (!location) return;
+
+        const { latitude, longitude } = location.coords;
+        await supabase
+            .from('users')
+            .update({
+                latitude,
+                longitude,
+                location_updated_at: new Date().toISOString(),
+            })
+            .eq('id', userId);
+    } catch (error) {
+        console.error('Error updating location:', error);
+    }
+}
+
 export async function checkNearbyConnections(
     currentUserId: string
 ): Promise<NearbyUser[]> {
-    const isBypass = useAuthStore.getState().isBypass;
-
     try {
-        if (isBypass) {
-            console.log('Bypass: Simulating nearby detection');
-            const mockUser: User = {
-                id: '00000000-0000-0000-0000-000000000001',
-                email: 'test01@reputation.protocol',
-                name: 'Test Identity 01',
-                username: 'test01',
-                avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=test01',
-                big_score: 4.8,
-                total_ratings: 12,
-                created_at: new Date().toISOString()
-            };
-            return [{ user: mockUser, distance: 5 }];
-        }
+        const hasPermission = await checkLocationPermission();
+        if (!hasPermission) return [];
 
+        // Get current location
         const location = await getCurrentLocation();
         if (!location) return [];
 
         const { latitude, longitude } = location.coords;
 
+        // Update my own location
+        await supabase
+            .from('users')
+            .update({
+                latitude,
+                longitude,
+                location_updated_at: new Date().toISOString(),
+            })
+            .eq('id', currentUserId);
+
+        // Fetch accepted connections with user data
         const { data: connections, error } = await supabase
             .from('connections')
             .select(`
-        *,
-        user_a_data:users!connections_user_a_fkey(*),
-        user_b_data:users!connections_user_b_fkey(*)
-      `)
+                *,
+                user_a_data:users!connections_user_a_fkey(*),
+                user_b_data:users!connections_user_b_fkey(*)
+            `)
             .or(`user_a.eq.${currentUserId},user_b.eq.${currentUserId}`)
             .eq('status', 'accepted');
 
         if (error || !connections) return [];
 
-        return [];
+        // Check each connected user's distance
+        const nearbyUsers: NearbyUser[] = [];
+
+        for (const conn of connections) {
+            const otherUser: User = conn.user_a === currentUserId
+                ? conn.user_b_data
+                : conn.user_a_data;
+
+            if (!otherUser) continue;
+
+            // Check if the other user has a recent location (within last 30 minutes)
+            const otherLat = (otherUser as any).latitude;
+            const otherLon = (otherUser as any).longitude;
+            const locUpdated = (otherUser as any).location_updated_at;
+
+            if (otherLat == null || otherLon == null) continue;
+
+            // Skip stale locations (> 30 min old)
+            if (locUpdated) {
+                const updatedAt = new Date(locUpdated).getTime();
+                const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+                if (updatedAt < thirtyMinAgo) continue;
+            }
+
+            const distance = calculateDistance(latitude, longitude, otherLat, otherLon);
+
+            if (distance <= PROXIMITY_THRESHOLD) {
+                nearbyUsers.push({ user: otherUser, distance });
+            }
+        }
+
+        return nearbyUsers;
     } catch (error) {
         console.error('Error checking nearby connections:', error);
         return [];
@@ -99,24 +163,19 @@ export async function createGPSProximityPass(
     currentUserId: string,
     otherUserId: string
 ): Promise<string | null> {
-    const isBypass = useAuthStore.getState().isBypass;
-    if (isBypass) {
-        console.log('Bypass: Simulating GPS pass creation');
-        return 'mock-gps-pass-' + Math.random().toString(36).substring(7);
-    }
 
     try {
-        // Check cooldown first (3-5 passes per 12h)
-        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+        // Check cooldown first (100 passes per 1h for testing)
+        const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
 
         const { count } = await supabase
             .from('interaction_passes')
             .select('*', { count: 'exact', head: true })
             .or(`and(user_a.eq.${currentUserId},user_b.eq.${otherUserId}),and(user_a.eq.${otherUserId},user_b.eq.${currentUserId})`)
-            .gte('created_at', twelveHoursAgo);
+            .gte('created_at', oneHourAgo);
 
-        if (count && count >= 5) {
-            throw new Error('Cooldown active: Max interaction limit reached for this pair.');
+        if (count && count >= 100) {
+            throw new Error('Rate limit hit: Max interaction limit reached for this pair (100/hr).');
         }
 
         // Create the pass

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, Platform, RefreshControl } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { LeaderboardEntry } from '@/types';
 export default function LeaderboardScreen() {
     const [leaders, setLeaders] = useState<LeaderboardEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         fetchLeaderboard();
@@ -33,6 +34,12 @@ export default function LeaderboardScreen() {
         }
     };
 
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await fetchLeaderboard();
+        setRefreshing(false);
+    };
+
     const renderLeader = ({ item, index }: { item: LeaderboardEntry; index: number }) => {
         const isTop3 = index < 3;
         const colors_top = [colors.accent, '#94A3B8', '#B45309'];
@@ -40,7 +47,6 @@ export default function LeaderboardScreen() {
         return (
             <View style={[styles.leaderGlass, isTop3 && styles.topCard]}>
                 <BlurView intensity={isTop3 ? 70 : 40} tint="light" style={StyleSheet.absoluteFill} />
-                {/* Liquid Gloss Reflection */}
                 <View style={styles.cardReflection} />
 
                 <View style={styles.rankBox}>
@@ -80,8 +86,18 @@ export default function LeaderboardScreen() {
                 renderItem={renderLeader}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.list}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                }
                 ListEmptyComponent={
-                    loading ? <ActivityIndicator style={styles.loader} color={colors.primary} /> : null
+                    loading ? (
+                        <ActivityIndicator style={styles.loader} color={colors.primary} />
+                    ) : (
+                        <View style={styles.emptyBox}>
+                            <Text style={styles.emptyEmoji}>🏆</Text>
+                            <Text style={styles.emptyText}>No reputation leaders yet</Text>
+                        </View>
+                    )
                 }
             />
         </SafeAreaView>
@@ -90,42 +106,42 @@ export default function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    bgGlow: { position: 'absolute', top: -100, left: -50, width: 450, height: 450, borderRadius: 225, backgroundColor: colors.primaryLight, opacity: 0.1, filter: Platform.OS === 'web' ? 'blur(100px)' : undefined },
-    header: { padding: spacing.xl, paddingBottom: spacing.md },
-    topLabel: { fontSize: 12, fontWeight: '900', color: colors.primary, letterSpacing: 5 },
-    title: { fontSize: 36, fontWeight: '900', color: colors.text, marginTop: 4 },
-    list: { padding: spacing.md, paddingBottom: 110 },
+    bgGlow: { position: 'absolute', top: -100, left: -50, width: 450, height: 450, borderRadius: 225, backgroundColor: colors.primaryLight, opacity: 0.1 },
+    header: { padding: spacing.lg, paddingBottom: spacing.sm },
+    topLabel: { fontSize: 10, fontWeight: '900', color: colors.primary, letterSpacing: 3 },
+    title: { fontSize: 32, fontWeight: '900', color: colors.text, marginTop: 2 },
+    list: { padding: spacing.sm, paddingBottom: 110 },
     leaderGlass: {
         ...glassStyles.container,
         flexDirection: 'row',
         alignItems: 'center',
-        padding: spacing.md,
-        marginBottom: spacing.sm,
+        padding: spacing.sm,
+        marginBottom: 6,
         backgroundColor: 'rgba(255, 255, 255, 0.45)',
         borderColor: 'rgba(255, 255, 255, 0.95)',
-        shadowColor: '#fff',
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
     },
     cardReflection: {
         position: 'absolute',
-        top: 4,
+        top: 3,
         left: '10%',
         width: '30%',
         height: 2,
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        backgroundColor: 'rgba(255, 255, 255, 0.5)',
         borderRadius: 5,
     },
-    topCard: { paddingVertical: spacing.lg, borderColor: 'rgba(245, 158, 11, 0.25)', backgroundColor: 'rgba(255, 248, 230, 0.5)' },
-    rankBox: { width: 50, alignItems: 'center' },
-    rankText: { fontSize: 18, fontWeight: '900', color: colors.textMuted },
-    avatarWrapper: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#fff' },
+    topCard: { paddingVertical: spacing.md, borderColor: 'rgba(245, 158, 11, 0.2)', backgroundColor: 'rgba(255, 248, 230, 0.5)' },
+    rankBox: { width: 40, alignItems: 'center' },
+    rankText: { fontSize: 16, fontWeight: '900', color: colors.textMuted },
+    avatarWrapper: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#fff' },
     avatar: { width: '100%', height: '100%' },
-    info: { flex: 1, marginLeft: spacing.md },
-    name: { fontSize: 16, fontWeight: '900', color: colors.text },
-    handle: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
-    scoreBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.03)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(0,0,0,0.02)' },
-    scoreValue: { fontSize: 16, fontWeight: '900', color: colors.accent },
+    info: { flex: 1, marginLeft: spacing.sm },
+    name: { fontSize: 15, fontWeight: '800', color: colors.text },
+    handle: { fontSize: 11, color: colors.textSecondary, fontWeight: '500' },
+    scoreBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.02)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+    scoreValue: { fontSize: 15, fontWeight: '900', color: colors.accent },
     scoreStar: { fontSize: 10, marginLeft: 2 },
     loader: { marginTop: 100 },
+    emptyBox: { alignItems: 'center', marginTop: 100 },
+    emptyEmoji: { fontSize: 64, marginBottom: spacing.md },
+    emptyText: { fontSize: 16, color: colors.textSecondary, fontWeight: '600' },
 });

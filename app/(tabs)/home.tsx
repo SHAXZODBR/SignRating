@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, Alert, RefreshControl } from 'react-native';
-import { ActivityIndicator } from 'react-native-paper';
+import { ActivityIndicator, Button, IconButton } from 'react-native-paper';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -9,16 +9,37 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore, useConnectionsStore } from '@/stores';
 import { Connection } from '@/types';
 import { checkNearbyConnections } from '@/lib/proximity';
+import * as Location from 'expo-location';
+import * as Linking from 'expo-linking';
 
 export default function HomeScreen() {
     const { user } = useAuthStore();
-    const { connections, fetchConnections, fetchPendingRequests, loading } = useConnectionsStore();
+    const { connections, pendingRequests, fetchConnections, fetchPendingRequests, acceptRequest, declineRequest, loading } = useConnectionsStore();
     const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         if (user) {
-            loadData();
+            const initHome = async () => {
+                try {
+                    const { status } = await Location.requestForegroundPermissionsAsync();
+                    if (status !== 'granted') {
+                        Alert.alert(
+                            'Location Required',
+                            'Enable location services to see nearby connections automatically.',
+                            [
+                                { text: 'Okay', style: 'cancel' },
+                                { text: 'Settings', onPress: Linking.openSettings }
+                            ]
+                        );
+                    }
+                } catch (error) {
+                    console.error('Permission request error:', error);
+                }
+                loadData();
+            };
+
+            initHome();
             const interval = setInterval(handleCheckNearby, 60000);
             return () => clearInterval(interval);
         }
@@ -70,51 +91,118 @@ export default function HomeScreen() {
         }
     };
 
+    const handleAccept = async (connectionId: string) => {
+        await acceptRequest(connectionId);
+        Alert.alert('Connected! 🤝', 'Handshake accepted successfully.');
+    };
+
+    const handleDecline = async (connectionId: string) => {
+        Alert.alert(
+            'Decline Request',
+            'Are you sure you want to decline this handshake?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Decline',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await declineRequest(connectionId);
+                    }
+                },
+            ]
+        );
+    };
+
+    const renderPendingRequest = ({ item }: { item: Connection }) => {
+        // The requester is user_a (they sent the request)
+        const requester = item.user_a_data;
+        if (!requester) return null;
+
+        return (
+            <View style={styles.pendingCard}>
+                <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill} />
+                <View style={styles.pendingCardReflection} />
+
+                <TouchableOpacity
+                    style={styles.pendingInfo}
+                    onPress={() => router.push(`/user/${requester.id}`)}
+                >
+                    <View style={styles.avatarWrapperMini}>
+                        <Image
+                            source={{ uri: requester.avatar_url || 'https://via.placeholder.com/100' }}
+                            style={styles.avatar}
+                        />
+                    </View>
+                    <View style={styles.userInfoMini}>
+                        <Text style={styles.userNameMini}>{requester.name}</Text>
+                        <Text style={styles.userHandleMini}>@{requester.username}</Text>
+                    </View>
+                </TouchableOpacity>
+
+                <View style={styles.pendingActions}>
+                    <TouchableOpacity
+                        style={styles.declineBtn}
+                        onPress={() => handleDecline(item.id)}
+                    >
+                        <Text style={styles.declineBtnText}>✕</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.acceptBtn}
+                        onPress={() => handleAccept(item.id)}
+                    >
+                        <Text style={styles.acceptBtnText}>✓ Accept</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    };
+
     const renderConnection = ({ item }: { item: Connection }) => {
         const otherUser = item.user_a === user?.id ? item.user_b_data : item.user_a_data;
 
         return (
             <View style={styles.glassCard}>
                 <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill} />
-                {/* Gloss Reflection */}
                 <View style={styles.cardReflection} />
 
-                <TouchableOpacity
-                    style={styles.cardInfo}
-                    onPress={() => router.push(`/user/${otherUser?.id}`)}
-                >
-                    <View style={styles.avatarWrapper}>
-                        <Image
-                            source={{ uri: otherUser?.avatar_url || 'https://via.placeholder.com/100' }}
-                            style={styles.avatar}
-                        />
-                    </View>
-                    <View style={styles.userInfo}>
-                        <Text style={styles.userName}>{otherUser?.name}</Text>
-                        <Text style={styles.userHandle}>@{otherUser?.username}</Text>
-                    </View>
-                    <View style={styles.scoreBadge}>
-                        <Text style={styles.scoreText}>⭐ {otherUser?.big_score?.toFixed(1) || '0.0'}</Text>
-                    </View>
-                </TouchableOpacity>
+                <View style={styles.cardContent}>
+                    <TouchableOpacity
+                        style={styles.cardInfo}
+                        onPress={() => router.push(`/user/${otherUser?.id}`)}
+                    >
+                        <View style={styles.avatarWrapperMini}>
+                            <Image
+                                source={{ uri: otherUser?.avatar_url || 'https://via.placeholder.com/100' }}
+                                style={styles.avatar}
+                            />
+                        </View>
+                        <View style={styles.userInfoMini}>
+                            <Text style={styles.userNameMini}>{otherUser?.name}</Text>
+                            <Text style={styles.userHandleMini}>@{otherUser?.username}</Text>
+                        </View>
+                        <View style={styles.scoreBadgeMini}>
+                            <Text style={styles.scoreTextMini}>⭐ {otherUser?.big_score?.toFixed(1) || '0.0'}</Text>
+                        </View>
+                    </TouchableOpacity>
 
-                <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => handleCreatePass(item, 'meet')}>
-                        <Text style={styles.actionEmoji}>🤝</Text>
-                        <Text style={styles.actionLabel}>Meet</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => handleCreatePass(item, 'call')}>
-                        <Text style={styles.actionEmoji}>📞</Text>
-                        <Text style={styles.actionLabel}>Call</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => handleCreatePass(item, 'chat')}>
-                        <Text style={styles.actionEmoji}>💬</Text>
-                        <Text style={styles.actionLabel}>Chat</Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionRowMini}>
+                        <TouchableOpacity style={styles.actionBtnMini} onPress={() => handleCreatePass(item, 'meet')}>
+                            <Text style={styles.actionEmojiMini}>🤝</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionBtnMini} onPress={() => handleCreatePass(item, 'call')}>
+                            <Text style={styles.actionEmojiMini}>📞</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionBtnMini} onPress={() => handleCreatePass(item, 'chat')}>
+                            <Text style={styles.actionEmojiMini}>💬</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         );
     };
+
+    // Combine pending + connections for header section rendering
+    const listData = connections;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -128,12 +216,26 @@ export default function HomeScreen() {
             </View>
 
             <FlatList
-                data={connections}
+                data={listData}
                 renderItem={renderConnection}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                }
+                ListHeaderComponent={
+                    pendingRequests.length > 0 ? (
+                        <View style={styles.pendingSection}>
+                            <Text style={styles.sectionLabel}>INCOMING HANDSHAKES</Text>
+                            {pendingRequests.map((req) => (
+                                <View key={req.id}>
+                                    {renderPendingRequest({ item: req })}
+                                </View>
+                            ))}
+                            <View style={styles.sectionDivider} />
+                            <Text style={styles.sectionLabel}>YOUR CONNECTIONS</Text>
+                        </View>
+                    ) : null
                 }
                 ListEmptyComponent={
                     loading ? (
@@ -165,7 +267,6 @@ const styles = StyleSheet.create({
         borderRadius: 200,
         backgroundColor: colors.primaryLight,
         opacity: 0.12,
-        filter: Platform.OS === 'web' ? 'blur(100px)' : undefined,
     },
     header: {
         paddingHorizontal: spacing.lg,
@@ -188,34 +289,108 @@ const styles = StyleSheet.create({
         paddingTop: spacing.md,
         paddingBottom: 110,
     },
+    // Pending requests section
+    pendingSection: {
+        marginBottom: spacing.md,
+    },
+    sectionLabel: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: colors.textMuted,
+        letterSpacing: 2,
+        marginBottom: spacing.sm,
+        marginLeft: spacing.xs,
+    },
+    sectionDivider: {
+        height: 1,
+        backgroundColor: 'rgba(0,0,0,0.04)',
+        marginVertical: spacing.lg,
+    },
+    pendingCard: {
+        ...glassStyles.container,
+        marginBottom: spacing.sm,
+        padding: spacing.md,
+        backgroundColor: 'rgba(245, 158, 11, 0.04)',
+        borderColor: 'rgba(245, 158, 11, 0.2)',
+    },
+    pendingCardReflection: {
+        position: 'absolute',
+        top: 3,
+        left: '5%',
+        width: '30%',
+        height: 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.5)',
+        borderRadius: 5,
+    },
+    pendingInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: spacing.sm,
+    },
+    pendingActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+    },
+    declineBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: spacing.sm,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.15)',
+    },
+    declineBtnText: {
+        color: colors.error,
+        fontSize: 16,
+        fontWeight: '900',
+    },
+    acceptBtn: {
+        backgroundColor: colors.success,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: 10,
+        borderRadius: 20,
+    },
+    acceptBtnText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '900',
+    },
+    // Connection cards
     glassCard: {
         ...glassStyles.container,
-        marginBottom: spacing.md,
-        padding: spacing.md,
+        marginBottom: spacing.sm,
+        padding: spacing.sm,
         backgroundColor: 'rgba(255, 255, 255, 0.45)',
         borderColor: 'rgba(255, 255, 255, 0.95)',
-        shadowColor: '#fff',
-        shadowOpacity: 0.2,
-        shadowRadius: 15,
     },
     cardReflection: {
         position: 'absolute',
-        top: 5,
+        top: 3,
         left: '5%',
-        width: '40%',
-        height: 3,
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        width: '30%',
+        height: 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.5)',
         borderRadius: 5,
+    },
+    cardContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
     cardInfo: {
         flexDirection: 'row',
         alignItems: 'center',
+        flex: 1,
     },
-    avatarWrapper: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        borderWidth: 2,
+    avatarWrapperMini: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 1.5,
         borderColor: '#fff',
         overflow: 'hidden',
         backgroundColor: '#fff',
@@ -224,53 +399,49 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
-    userInfo: {
-        marginLeft: spacing.md,
+    userInfoMini: {
+        marginLeft: spacing.sm,
         flex: 1,
     },
-    userName: {
-        fontSize: 18,
-        fontWeight: '900',
+    userNameMini: {
+        fontSize: 15,
+        fontWeight: '800',
         color: colors.text,
     },
-    userHandle: {
-        fontSize: 13,
+    userHandleMini: {
+        fontSize: 11,
         color: colors.textSecondary,
-        fontWeight: '600',
+        fontWeight: '500',
     },
-    scoreBadge: {
+    scoreBadgeMini: {
         backgroundColor: 'rgba(245, 158, 11, 0.08)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: 'rgba(245, 158, 11, 0.2)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 10,
+        marginRight: spacing.sm,
     },
-    scoreText: {
+    scoreTextMini: {
         color: colors.accent,
-        fontSize: 14,
-        fontWeight: '900',
+        fontSize: 12,
+        fontWeight: '800',
     },
-    actionRow: {
+    actionRowMini: {
         flexDirection: 'row',
-        marginTop: spacing.md,
-        paddingTop: spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(0, 0, 0, 0.03)',
-    },
-    actionBtn: {
-        flex: 1,
         alignItems: 'center',
     },
-    actionEmoji: {
-        fontSize: 22,
-        marginBottom: 4,
+    actionBtnMini: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0,0,0,0.03)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.02)',
     },
-    actionLabel: {
-        fontSize: 10,
-        color: colors.textSecondary,
-        fontWeight: '800',
-        textTransform: 'uppercase',
+    actionEmojiMini: {
+        fontSize: 18,
     },
     loader: {
         marginTop: 100,

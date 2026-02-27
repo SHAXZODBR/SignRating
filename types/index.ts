@@ -8,6 +8,9 @@ export interface User {
     avatar_url: string | null;
     big_score: number;
     total_ratings: number;
+    latitude?: number;
+    longitude?: number;
+    location_updated_at?: string;
     created_at: string;
 }
 
@@ -61,7 +64,7 @@ export interface AuthState {
     setSession: (session: { access_token: string } | null) => void;
     setLoading: (loading: boolean) => void;
     setBypass: (isBypass: boolean) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
 }
 
 export interface ConnectionsState {
@@ -71,6 +74,8 @@ export interface ConnectionsState {
     fetchConnections: (userId: string) => Promise<void>;
     fetchPendingRequests: (userId: string) => Promise<void>;
     acceptRequest: (connectionId: string) => Promise<void>;
+    declineRequest: (connectionId: string) => Promise<void>;
+    blockUser: (blockerId: string, blockedId: string) => Promise<void>;
     setLoading: (loading: boolean) => void;
 }
 
@@ -88,3 +93,4 @@ export interface LeaderboardEntry {
     big_score: number;
     total_ratings: number;
 }
+

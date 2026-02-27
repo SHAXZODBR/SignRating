@@ -18,26 +18,6 @@ export default function VerifyScreen() {
         if (!otp || otp.length < 6) { setError('6-digit code required'); return; }
         setLoading(true); setError('');
         try {
-            // BACKDOOR: 123456 bypass for testing
-            if (otp === '123456') {
-                console.log('Backdoor activated: 123456');
-                setBypass(true); // Flag this as a bypass session
-                // We attempt a normal verify first, but if it's the backdoor, we might need a fallback.
-                // For now, let's see if we can just proceed to onboarding/home.
-                // IMPORTANT: Real Supabase session is required for DB calls.
-                // If this is a known test email, we could sign in with a fixed password if configured.
-
-                // For the user's request, we'll try to find an existing user or go to onboarding.
-                const { data: userData } = await supabase.from('users').select('*').eq('email', email!).single();
-                if (userData) {
-                    setUser(userData);
-                    router.replace('/(tabs)/home');
-                } else {
-                    router.replace('/(auth)/onboarding');
-                }
-                return;
-            }
-
             const { data, error: verifyError } = await supabase.auth.verifyOtp({ email: email!, token: otp, type: 'email' });
             if (verifyError) throw verifyError;
             if (data.session) {
@@ -97,7 +77,7 @@ export default function VerifyScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    bgGlow: { position: 'absolute', width: 400, height: 400, borderRadius: 200, opacity: 0.1, filter: Platform.OS === 'web' ? 'blur(100px)' : undefined },
+    bgGlow: { position: 'absolute', width: 400, height: 400, borderRadius: 200, opacity: 0.1 },
     scrollContent: { flexGrow: 1, padding: spacing.xl, justifyContent: 'center' },
     header: { marginBottom: 40 },
     title: { fontSize: 40, fontWeight: '900', color: colors.text, textTransform: 'uppercase', letterSpacing: 4 },

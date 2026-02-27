@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, Image, Platform } from 'react-native';
+import { StyleSheet, Text, View, Image, Platform, Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { BlurView } from 'expo-blur';
 import { IconButton, Button, ActivityIndicator } from 'react-native-paper';
@@ -9,6 +9,7 @@ import { colors, spacing, fontSize, borderRadius, glassStyles } from '@/lib/them
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores';
 import { User } from '@/types';
+import * as Linking from 'expo-linking';
 
 export default function ScanScreen() {
     const { isBypass } = useAuthStore();
@@ -20,10 +21,24 @@ export default function ScanScreen() {
     if (!permission) return <View style={styles.container} />;
     if (!permission.granted) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.message}>Camera access is required to scan handshakes.</Text>
-                <Button onPress={requestPermission} mode="contained" style={styles.permissionBtn}>Enable Camera</Button>
-            </View>
+            <SafeAreaView style={[styles.container, { justifyContent: 'center' }]}>
+                <View style={styles.permissionBox}>
+                    <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
+                    <Text style={styles.permissionEmoji}>📷</Text>
+                    <Text style={styles.permissionTitle}>Camera Access Required</Text>
+                    <Text style={styles.message}>We need camera access to scan physical handshakes.</Text>
+
+                    <Button
+                        onPress={permission.canAskAgain ? requestPermission : Linking.openSettings}
+                        mode="contained"
+                        style={styles.permissionBtn}
+                        labelStyle={{ fontWeight: '900' }}
+                    >
+                        {permission.canAskAgain ? 'Enable Camera' : 'Open Settings'}
+                    </Button>
+                    <Button onPress={() => router.back()} mode="text" style={{ marginTop: 10 }}>Cancel</Button>
+                </View>
+            </SafeAreaView>
         );
     }
 
@@ -33,30 +48,13 @@ export default function ScanScreen() {
         setLoading(true);
         const userId = data.split(':')[1];
 
-        // Bypass logic for testing
-        if (isBypass && userId === '00000000-0000-0000-0000-000000000001') {
-            console.log('Bypass: Detected mock protocol user');
-            const mockScannedUser: User = {
-                id: userId,
-                email: 'test01@reputation.protocol',
-                name: 'Test Identity 01',
-                username: 'test01',
-                avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=test01',
-                big_score: 4.8,
-                total_ratings: 12,
-                created_at: new Date().toISOString()
-            };
-            setScannedUser(mockScannedUser);
-            setLoading(false);
-            return;
-        }
-
         try {
             const { data: userData, error } = await supabase.from('users').select('*').eq('id', userId).single();
             if (error) throw error;
             setScannedUser(userData);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Scan error:', err);
+            Alert.alert('Protocol Error', 'Handshake identity could not be verified.');
             setScanned(false);
         } finally {
             setLoading(false);
@@ -130,8 +128,11 @@ const styles = StyleSheet.create({
     centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.sm },
     headerTitle: { fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 3 },
-    message: { textAlign: 'center', color: colors.text, marginBottom: 20 },
-    permissionBtn: { marginHorizontal: 60, borderRadius: 18 },
+    permissionBox: { ...glassStyles.container, padding: spacing.xl, margin: spacing.xl, alignItems: 'center' },
+    permissionEmoji: { fontSize: 50, marginBottom: spacing.sm },
+    permissionTitle: { fontSize: 20, fontWeight: '900', color: colors.text, marginBottom: spacing.xs },
+    message: { textAlign: 'center', color: colors.textSecondary, marginBottom: 20, fontWeight: '600' },
+    permissionBtn: { borderRadius: 18, width: '100%' },
     scanTarget: { width: 280, height: 280, alignSelf: 'center', justifyContent: 'center', alignItems: 'center' },
     corner: { position: 'absolute', width: 45, height: 45, borderColor: colors.primary, borderWidth: 4, borderRadius: 15 },
     cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },

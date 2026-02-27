@@ -4,17 +4,23 @@ import { View, StyleSheet, TouchableOpacity, Platform, Dimensions } from 'react-
 import { BlurView } from 'expo-blur';
 import { colors, spacing, borderRadius } from '@/lib/theme';
 import { Text } from 'react-native-paper';
+import { useConnectionsStore } from '@/stores';
 
 const TAB_BAR_MARGIN = 16;
 
 // Custom Tab Icon Component
-function TabIcon({ emoji, focused, label, width }: { emoji: string; focused: boolean; label: string; width: number }) {
+function TabIcon({ emoji, focused, label, width, badge }: { emoji: string; focused: boolean; label: string; width: number; badge?: number }) {
     return (
         <View style={[styles.tabItem, { width: width / 5 }]}>
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
                 <Text style={[styles.tabEmoji, { opacity: focused ? 1 : 0.6, transform: [{ scale: focused ? 1.2 : 1 }] }]}>
                     {emoji}
                 </Text>
+                {badge != null && badge > 0 && (
+                    <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
+                    </View>
+                )}
             </View>
             <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.textMuted, opacity: focused ? 1 : 0.8 }]}>
                 {label}
@@ -46,7 +52,7 @@ function ScannerButton({ onPress, width }: { onPress: () => void; width: number 
 export default function TabsLayout() {
     const { width } = Dimensions.get('window');
     const tabBarWidth = width - (TAB_BAR_MARGIN * 2);
-    const itemWidth = tabBarWidth / 5;
+    const pendingCount = useConnectionsStore((s) => s.pendingRequests.length);
 
     return (
         <View style={styles.container}>
@@ -71,7 +77,7 @@ export default function TabsLayout() {
                     options={{
                         title: 'Home',
                         tabBarIcon: ({ focused }) => (
-                            <TabIcon emoji="🏠" focused={focused} label="Home" width={tabBarWidth} />
+                            <TabIcon emoji="🏠" focused={focused} label="Home" width={tabBarWidth} badge={pendingCount} />
                         ),
                     }}
                 />
@@ -116,11 +122,6 @@ export default function TabsLayout() {
                         ),
                     }}
                 />
-
-                <Tabs.Screen
-                    name="index"
-                    options={{ href: null }}
-                />
             </Tabs>
         </View>
     );
@@ -138,7 +139,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
         borderRadius: borderRadius.xl,
         borderWidth: 1.5,
-        borderColor: 'rgba(255, 255, 255, 0.9)', // Bright reflective border
+        borderColor: 'rgba(255, 255, 255, 0.9)',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.1,
@@ -146,7 +147,7 @@ const styles = StyleSheet.create({
         elevation: 10,
         paddingBottom: 0,
         borderTopWidth: 1.5,
-        overflow: 'visible', // Allow scanner to overflow
+        overflow: 'visible',
     },
     blurBg: {
         ...StyleSheet.absoluteFillObject,
@@ -178,12 +179,31 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
         textTransform: 'uppercase',
     },
+    badge: {
+        position: 'absolute',
+        top: -4,
+        right: -8,
+        backgroundColor: colors.error,
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: '#fff',
+    },
+    badgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '900',
+    },
     scannerWrapper: {
         alignItems: 'center',
         justifyContent: 'center',
     },
     scannerButton: {
-        top: -30, // Raise higher
+        top: -30,
         width: 72,
         height: 72,
         borderRadius: 36,

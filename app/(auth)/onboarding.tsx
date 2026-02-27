@@ -43,7 +43,7 @@ export default function OnboardingScreen() {
             const { data: existingUser } = await supabase.from('users').select('id').eq('username', username.toLowerCase().trim()).single();
             if (existingUser) throw new Error('Identity already occupied');
             const { data: newUser, error: insertError } = await supabase.from('users').insert({
-                id: session.user.id, email: session.user.email, name: name.trim(), username: username.toLowerCase().trim(),
+                id: session.user.id, name: name.trim(), username: username.toLowerCase().trim(),
                 avatar_url: avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
                 big_score: 0, total_ratings: 0,
             }).select().single();
@@ -89,7 +89,7 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    bgGlow: { position: 'absolute', width: 500, height: 500, borderRadius: 250, opacity: 0.1, filter: Platform.OS === 'web' ? 'blur(100px)' : undefined },
+    bgGlow: { position: 'absolute', width: 500, height: 500, borderRadius: 250, opacity: 0.1 },
     scrollContent: { flexGrow: 1, padding: spacing.xl, justifyContent: 'center' },
     header: { marginBottom: 40 },
     title: { fontSize: 48, fontWeight: '900', color: colors.text, letterSpacing: 2 },

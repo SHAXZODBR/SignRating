@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores';
 
 export default function RatingScreen() {
     const { passId } = useLocalSearchParams<{ passId: string }>();
-    const { user } = useAuthStore();
+    const { user, isBypass } = useAuthStore();
 
     const [rating, setRating] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -26,14 +26,15 @@ export default function RatingScreen() {
 
     const fetchPassData = async () => {
         if (!passId) return;
+
         try {
             const { data, error } = await supabase
                 .from('interaction_passes')
                 .select(`
-          *,
-          user_a_data:users!interaction_passes_user_a_fkey(*),
-          user_b_data:users!interaction_passes_user_b_fkey(*)
-        `)
+                    *,
+                    user_a_data:users!interaction_passes_user_a_fkey(*),
+                    user_b_data:users!interaction_passes_user_b_fkey(*)
+                `)
                 .eq('id', passId)
                 .single();
 
@@ -41,8 +42,10 @@ export default function RatingScreen() {
             setPassData(data);
             const other = data.user_a === user?.id ? data.user_b_data : data.user_a_data;
             setOtherUser(other);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Fetch pass error:', error);
+            Alert.alert('Verification Failed', 'Could not retrieve handshake protocol data.');
+            router.back();
         }
     };
 
@@ -57,8 +60,14 @@ export default function RatingScreen() {
     const handleSubmit = async () => {
         if (rating === 0 || !user || !passData) return;
         setLoading(true);
+
         try {
-            const { error } = await supabase.from('ratings').insert({ pass_id: passId, rater_id: user.id, ratee_id: otherUser.id, score: rating });
+            const { error } = await supabase.from('ratings').insert({
+                pass_id: passId,
+                rater_id: user.id,
+                ratee_id: otherUser.id,
+                score: rating,
+            });
             if (error) throw error;
             setSubmitted(true);
             setTimeout(() => router.replace('/(tabs)/home'), 2000);
@@ -103,6 +112,10 @@ export default function RatingScreen() {
                         <Button mode="contained" onPress={handleSubmit} loading={loading} disabled={rating === 0 || loading} style={[styles.submitBtn, rating > 0 && styles.submitBtnActive]} labelStyle={styles.submitLabel}>
                             Confirm Reputation
                         </Button>
+
+                        <Button mode="text" onPress={() => router.back()} textColor={colors.textMuted} style={styles.cancelBtn}>
+                            Cancel
+                        </Button>
                     </View>
                 ) : (
                     <View style={styles.successBox}>
@@ -121,8 +134,8 @@ export default function RatingScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    bgGlow: { position: 'absolute', top: '20%', width: 500, height: 500, borderRadius: 250, backgroundColor: colors.primaryLight, opacity: 0.05, alignSelf: 'center', filter: Platform.OS === 'web' ? 'blur(100px)' : undefined },
+    loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    bgGlow: { position: 'absolute', top: '20%', width: 500, height: 500, borderRadius: 250, backgroundColor: colors.primaryLight, opacity: 0.05, alignSelf: 'center' },
     content: { flex: 1, padding: spacing.xl, justifyContent: 'center' },
     glassHeader: { ...glassStyles.container, padding: spacing.xl, alignItems: 'center', marginBottom: spacing.xxl, backgroundColor: 'rgba(255, 255, 255, 0.4)', borderColor: 'rgba(255, 255, 255, 0.8)' },
     title: { fontSize: 26, fontWeight: '900', color: colors.text },
@@ -136,6 +149,7 @@ const styles = StyleSheet.create({
     submitBtn: { width: '100%', paddingVertical: 10, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.05)' },
     submitBtnActive: { backgroundColor: colors.primary },
     submitLabel: { fontSize: 18, fontWeight: '900', color: '#fff' },
+    cancelBtn: { marginTop: spacing.md },
     successBox: { alignItems: 'center' },
     successGlass: { ...glassStyles.container, padding: spacing.xxl, alignItems: 'center', width: '100%', backgroundColor: 'rgba(255, 255, 255, 0.6)' },
     successEmoji: { fontSize: 72, marginBottom: spacing.lg },

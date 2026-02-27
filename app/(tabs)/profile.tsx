@@ -1,13 +1,20 @@
-import { View, Text, StyleSheet, ScrollView, Share, TouchableOpacity, Switch, Platform } from 'react-native';
-import { Button, IconButton, Avatar } from 'react-native-paper';
+import { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Share, TouchableOpacity, Switch, Platform, Alert, Modal, KeyboardAvoidingView } from 'react-native';
+import { Button, IconButton, Avatar, TextInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import QRCode from 'react-native-qrcode-svg';
 import { colors, spacing, fontSize, borderRadius, glassStyles } from '@/lib/theme';
 import { useAuthStore } from '@/stores';
+import { supabase } from '@/lib/supabase';
 
 export default function ProfileScreen() {
-    const { user, logout } = useAuthStore();
+    const { user, logout, setUser, isBypass } = useAuthStore();
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [editName, setEditName] = useState(user?.name || '');
+    const [editUsername, setEditUsername] = useState(user?.username || '');
+    const [saving, setSaving] = useState(false);
+    const [editError, setEditError] = useState('');
 
     const handleShare = async () => {
         if (!user) return;
@@ -21,6 +28,67 @@ export default function ProfileScreen() {
         }
     };
 
+    const handleEditProfile = () => {
+        setEditName(user?.name || '');
+        setEditUsername(user?.username || '');
+        setEditError('');
+        setEditModalVisible(true);
+    };
+
+    const handleSaveProfile = async () => {
+        if (!editName.trim() || !editUsername.trim()) {
+            setEditError('Name and username are required');
+            return;
+        }
+        setSaving(true);
+        setEditError('');
+
+        try {
+            // Check if username is taken by someone else
+            const { data: existingUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('username', editUsername.trim().toLowerCase())
+                .neq('id', user!.id)
+                .single();
+
+            if (existingUser) {
+                setEditError('Username already taken');
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('users')
+                .update({
+                    name: editName.trim(),
+                    username: editUsername.trim().toLowerCase(),
+                })
+                .eq('id', user!.id)
+                .select()
+                .single();
+
+            if (error) throw error;
+            if (data) setUser(data);
+            setEditModalVisible(false);
+            Alert.alert('Updated', 'Profile updated successfully.');
+        } catch (err: any) {
+            setEditError(err.message || 'Failed to update profile');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleLogout = () => {
+        Alert.alert(
+            'Sign Out',
+            'Are you sure you want to relinquish your session?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Sign Out', style: 'destructive', onPress: logout },
+            ]
+        );
+    };
+
     if (!user) return null;
 
     return (
@@ -30,12 +98,11 @@ export default function ProfileScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>Account</Text>
-                    <IconButton icon="dots-vertical" iconColor={colors.primary} size={28} onPress={() => { }} />
+                    <IconButton icon="pencil" iconColor={colors.primary} size={24} onPress={handleEditProfile} />
                 </View>
 
                 <View style={styles.profileGlass}>
                     <BlurView intensity={60} tint="light" style={StyleSheet.absoluteFill} />
-                    {/* Liquid Gloss Reflection */}
                     <View style={styles.glossyTop} />
 
                     <View style={styles.avatarWrapper}>
@@ -86,19 +153,71 @@ export default function ProfileScreen() {
                 </View>
 
                 <View style={styles.settingsBox}>
+                    <TouchableOpacity style={styles.settingItem} activeOpacity={0.7} onPress={handleEditProfile}>
+                        <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
+                        <Text style={styles.settingText}>Edit Profile</Text>
+                        <IconButton icon="chevron-right" iconColor={colors.textMuted} size={22} />
+                    </TouchableOpacity>
+
                     <TouchableOpacity style={styles.settingItem} activeOpacity={0.7}>
                         <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
                         <Text style={styles.settingText}>Identity Visibility</Text>
                         <Switch value={true} trackColor={{ false: '#eee', true: colors.primary }} />
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[styles.settingItem, styles.logoutItem]} onPress={logout} activeOpacity={0.7}>
+                    <TouchableOpacity style={[styles.settingItem, styles.logoutItem]} onPress={handleLogout} activeOpacity={0.7}>
                         <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
                         <Text style={styles.logoutText}>Relinquish Session</Text>
                         <IconButton icon="power" iconColor={colors.error} size={22} />
                     </TouchableOpacity>
                 </View>
             </ScrollView>
+
+            {/* Edit Profile Modal */}
+            <Modal visible={editModalVisible} animationType="slide" transparent>
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+                    <View style={styles.modalContainer}>
+                        <BlurView intensity={95} tint="light" style={StyleSheet.absoluteFill} />
+
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Edit Identity</Text>
+                            <IconButton icon="close" iconColor={colors.textMuted} size={24} onPress={() => setEditModalVisible(false)} />
+                        </View>
+
+                        <TextInput
+                            mode="flat"
+                            label="Name"
+                            value={editName}
+                            onChangeText={setEditName}
+                            style={styles.modalInput}
+                            textColor={colors.text}
+                            activeUnderlineColor={colors.primary}
+                        />
+                        <TextInput
+                            mode="flat"
+                            label="Username"
+                            value={editUsername}
+                            onChangeText={setEditUsername}
+                            style={styles.modalInput}
+                            textColor={colors.text}
+                            activeUnderlineColor={colors.primary}
+                            autoCapitalize="none"
+                        />
+
+                        {editError ? <Text style={styles.editError}>{editError}</Text> : null}
+
+                        <Button
+                            mode="contained"
+                            onPress={handleSaveProfile}
+                            loading={saving}
+                            style={styles.saveBtn}
+                            labelStyle={styles.saveLabel}
+                        >
+                            Save Changes
+                        </Button>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -117,7 +236,6 @@ const styles = StyleSheet.create({
         borderRadius: 200,
         backgroundColor: colors.secondary,
         opacity: 0.1,
-        filter: Platform.OS === 'web' ? 'blur(100px)' : undefined,
     },
     scrollContent: { paddingBottom: 120 },
     header: {
@@ -180,4 +298,53 @@ const styles = StyleSheet.create({
     settingText: { fontSize: 16, color: colors.text, fontWeight: '700' },
     logoutText: { fontSize: 16, color: colors.error, fontWeight: '800' },
     logoutItem: { borderColor: 'rgba(239, 68, 68, 0.15)', backgroundColor: 'rgba(239, 68, 68, 0.02)' },
+    // Edit Modal
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.3)',
+    },
+    modalContainer: {
+        ...glassStyles.container,
+        borderRadius: 28,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        padding: spacing.xl,
+        paddingBottom: spacing.xxl,
+        backgroundColor: 'rgba(255,255,255,0.95)',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: spacing.lg,
+    },
+    modalTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        color: colors.text,
+    },
+    modalInput: {
+        backgroundColor: 'rgba(0,0,0,0.03)',
+        marginBottom: spacing.md,
+        borderRadius: 12,
+        fontSize: 16,
+    },
+    editError: {
+        color: colors.error,
+        fontSize: 13,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: spacing.md,
+    },
+    saveBtn: {
+        backgroundColor: colors.primary,
+        borderRadius: 15,
+        paddingVertical: 8,
+        marginTop: spacing.md,
+    },
+    saveLabel: {
+        fontWeight: '900',
+        fontSize: 16,
+    },
 });

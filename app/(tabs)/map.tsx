@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, Platform, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Animated, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { Avatar, IconButton, ActivityIndicator } from 'react-native-paper';
@@ -8,6 +8,8 @@ import { useAuthStore, useConnectionsStore } from '@/stores';
 import { checkNearbyConnections, createGPSProximityPass } from '@/lib/proximity';
 import { NearbyUser } from '@/types';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 const RADAR_SIZE = width * 0.85;
@@ -16,12 +18,31 @@ export default function MapScreen() {
     const { user: currentUser } = useAuthStore();
     const { connections } = useConnectionsStore();
     const [nearby, setNearby] = useState<NearbyUser[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    // Radar Animation
+    const [refreshing, setRefreshing] = useState(false);
+    const [loading, setLoading] = useState(false);
     const pulseAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
+        const initMap = async () => {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                    Alert.alert(
+                        'Location Required',
+                        'Please enable location services in your settings to use the radar.',
+                        [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Open Settings', onPress: Linking.openSettings }
+                        ]
+                    );
+                }
+            } catch (error) {
+                console.error('Map Permission request error:', error);
+            }
+            refreshNearby();
+        };
+
+        // Radar Animation
         Animated.loop(
             Animated.sequence([
                 Animated.timing(pulseAnim, {
@@ -37,10 +58,16 @@ export default function MapScreen() {
             ])
         ).start();
 
-        refreshNearby();
+        initMap();
         const interval = setInterval(refreshNearby, 15000); // 15s refresh
         return () => clearInterval(interval);
     }, []);
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await refreshNearby();
+        setRefreshing(false);
+    };
 
     const refreshNearby = async () => {
         if (!currentUser) return;
@@ -128,7 +155,12 @@ export default function MapScreen() {
                 })}
             </View>
 
-            <ScrollView contentContainerStyle={styles.nearbyList}>
+            <ScrollView
+                contentContainerStyle={styles.nearbyList}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                }
+            >
                 <Text style={styles.sectionTitle}>PROXIMITY PROTOCOL</Text>
                 {nearby.length === 0 ? (
                     <View style={styles.emptyBox}>
@@ -172,7 +204,7 @@ const styles = StyleSheet.create({
         borderRadius: 250,
         backgroundColor: colors.primary,
         opacity: 0.05,
-        filter: Platform.OS === 'web' ? 'blur(120px)' : undefined,
+
     },
     header: {
         flexDirection: 'row',
