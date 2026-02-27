@@ -13,7 +13,7 @@ import * as Location from 'expo-location';
 import * as Linking from 'expo-linking';
 
 export default function HomeScreen() {
-    const { user } = useAuthStore();
+    const { user, setUser } = useAuthStore();
     const { connections, pendingRequests, fetchConnections, fetchPendingRequests, acceptRequest, declineRequest, loading } = useConnectionsStore();
     const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -58,7 +58,7 @@ export default function HomeScreen() {
                 }, () => fetchConnections(user.id))
                 .subscribe();
 
-            // Real-time interaction passes subscription
+            // Real-time interaction passes subscription (Incoming requests)
             const passSub = supabase
                 .channel('passes_changes')
                 .on('postgres_changes', {
@@ -72,11 +72,37 @@ export default function HomeScreen() {
                 })
                 .subscribe();
 
-            const interval = setInterval(handleCheckNearby, 30000); // 30s check
+            // Real-time ratings subscription (Score updates)
+            const ratingSub = supabase
+                .channel('ratings_revealed')
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'ratings',
+                    filter: `ratee_id=eq.${user.id}`
+                }, async (payload) => {
+                    if (payload.new.revealed && !payload.old.revealed) {
+                        // Rating was just revealed!
+                        Alert.alert('Index Updated', 'A new reputation record has been decrypted. Your Trust Index has been recalibrated.');
+
+                        // Re-fetch user data to update big_score in store
+                        const { data: updatedUser } = await supabase
+                            .from('users')
+                            .select('*')
+                            .eq('id', user.id)
+                            .single();
+
+                        if (updatedUser) setUser(updatedUser);
+                    }
+                })
+                .subscribe();
+
+            const interval = setInterval(handleCheckNearby, 30000);
             return () => {
                 clearInterval(interval);
                 connSub.unsubscribe();
                 passSub.unsubscribe();
+                ratingSub.unsubscribe();
             };
         }
     }, [user]);

@@ -61,37 +61,51 @@ CREATE OR REPLACE FUNCTION calculate_user_score(target_user_id UUID)
 RETURNS DECIMAL AS $$
 DECLARE
   final_score DECIMAL;
+  current_user_score DECIMAL;
 BEGIN
+  -- Get user's current score to apply relative friction
+  SELECT big_score INTO current_user_score FROM users WHERE id = target_user_id;
+  current_user_score := COALESCE(current_user_score, 0);
+
   WITH weighted_ratings AS (
     SELECT 
       r.score,
       CASE ip.type
         WHEN 'meet' THEN 1.0
         WHEN 'gps_proximity' THEN 1.0
-        WHEN 'call' THEN 0.6
+        WHEN 'call' THEN 0.7
         WHEN 'chat' THEN 0.4
         ELSE 0.4
       END AS type_weight,
-      GREATEST(0.3, 1 + (0.5 * (1 - EXTRACT(EPOCH FROM (NOW() - r.created_at)) / (30 * 24 * 3600)))) AS recency_weight,
-      POWER(2.0, COALESCE(rater.big_score, 2.5) - 4.0) AS rater_weight
+      -- Recency: Ratings older than 30 days lose 70% of impact
+      GREATEST(0.3, 1 - (EXTRACT(EPOCH FROM (NOW() - r.created_at)) / (30 * 24 * 3600))) AS recency_weight,
+      -- Rater Gravity (Nosedive): High-index users have exponentially more power
+      POWER(4.0, COALESCE(rater.big_score, 2.5) - 3.5) AS rater_weight,
+      -- Friction: Low scores from high users pull harder than high scores push up
+      CASE 
+        WHEN r.score < current_user_score AND current_user_score > 4.0 THEN 1.8 -- Downward drag for high-tier users
+        WHEN r.score > current_user_score AND current_user_score > 4.5 THEN 0.4 -- Harder to climb above 4.5
+        ELSE 1.0
+      END AS friction_multiplier
     FROM ratings r
     JOIN interaction_passes ip ON r.pass_id = ip.id
     JOIN users rater ON r.rater_id = rater.id
     WHERE r.ratee_id = target_user_id
       AND r.revealed = TRUE
     ORDER BY r.created_at DESC
-    LIMIT 100
+    LIMIT 200
   )
   SELECT 
     COALESCE(
-      SUM(score * type_weight * recency_weight * rater_weight) / 
-      NULLIF(SUM(type_weight * recency_weight * rater_weight), 0),
+      SUM(score * type_weight * recency_weight * rater_weight * friction_multiplier) / 
+      NULLIF(SUM(type_weight * recency_weight * rater_weight * friction_multiplier), 0),
       0
     )
   INTO final_score
   FROM weighted_ratings;
   
-  RETURN ROUND(LEAST(COALESCE(final_score, 0), 5.0), 2);
+  -- Final score normalization (ensure it stays between 0 and 5)
+  RETURN ROUND(GREATEST(0, LEAST(COALESCE(final_score, 0), 5.0)), 2);
 END;
 $$ LANGUAGE plpgsql;
 
