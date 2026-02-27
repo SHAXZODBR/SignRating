@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, Alert, RefreshControl, Animated } from 'react-native';
 import { ActivityIndicator, Button, IconButton } from 'react-native-paper';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,16 @@ export default function HomeScreen() {
     const { connections, pendingRequests, fetchConnections, fetchPendingRequests, acceptRequest, declineRequest, loading } = useConnectionsStore();
     const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [protocolAlert, setProtocolAlert] = useState<{ msg: string; sub: string } | null>(null);
+    const fadeAnim = useState(new Animated.Value(0))[0];
+
+    const showProtocolAlert = (msg: string, sub: string) => {
+        setProtocolAlert({ msg, sub });
+        Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+        setTimeout(() => {
+            Animated.timing(fadeAnim, { toValue: 0, duration: 800, useNativeDriver: true }).start(() => setProtocolAlert(null));
+        }, 5000);
+    };
 
     useEffect(() => {
         if (user) {
@@ -49,7 +59,10 @@ export default function HomeScreen() {
                     schema: 'public',
                     table: 'connections',
                     filter: `user_b=eq.${user.id}`
-                }, () => fetchPendingRequests(user.id))
+                }, () => {
+                    showProtocolAlert('PROTOCOL SYNC', 'A contact has acknowledged your handshake. Connection established.');
+                    fetchPendingRequests(user.id);
+                })
                 .on('postgres_changes', {
                     event: '*',
                     schema: 'public',
@@ -66,8 +79,9 @@ export default function HomeScreen() {
                     schema: 'public',
                     table: 'interaction_passes',
                     filter: `user_b=eq.${user.id}`
-                }, (payload) => {
-                    Alert.alert('Protocol Interaction', 'A new handshake encounter has been initiated.');
+                }, (payload: any) => {
+                    showProtocolAlert('PROTOCOL INITIATED', 'A new handshake encounter has been detected in your proximity.');
+                    // Still push to rate screen as it's an action required
                     router.push(`/rate/${payload.new.id}`);
                 })
                 .subscribe();
@@ -76,23 +90,17 @@ export default function HomeScreen() {
             const ratingSub = supabase
                 .channel('ratings_revealed')
                 .on('postgres_changes', {
-                    event: 'UPDATE',
+                    event: '*',
                     schema: 'public',
                     table: 'ratings',
                     filter: `ratee_id=eq.${user.id}`
-                }, async (payload) => {
-                    if (payload.new.revealed && !payload.old.revealed) {
-                        // Rating was just revealed!
-                        Alert.alert('Index Updated', 'A new reputation record has been decrypted. Your Trust Index has been recalibrated.');
+                }, async (payload: any) => {
+                    if (payload.new && payload.new.revealed && !payload.old?.revealed) {
+                        showProtocolAlert('INDEX CALIBRATED', 'A new reputation record has been decrypted. Your Trust Index is updating.');
 
-                        // Re-fetch user data to update big_score in store
-                        const { data: updatedUser } = await supabase
-                            .from('users')
-                            .select('*')
-                            .eq('id', user.id)
-                            .single();
-
+                        const { data: updatedUser } = await supabase.from('users').select('*').eq('id', user.id).single();
                         if (updatedUser) setUser(updatedUser);
+                        onRefresh(); // Refresh the list too
                     }
                 })
                 .subscribe();
@@ -269,6 +277,15 @@ export default function HomeScreen() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.bgGlow} />
+
+            {protocolAlert && (
+                <Animated.View style={[styles.protocolToast, { opacity: fadeAnim }]}>
+                    <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} />
+                    <View style={styles.toastGlow} />
+                    <Text style={styles.toastMsg}>{protocolAlert.msg}</Text>
+                    <Text style={styles.toastSub}>{protocolAlert.sub}</Text>
+                </Animated.View>
+            )}
 
             <View style={styles.header}>
                 <View>
@@ -512,10 +529,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: 100,
     },
-    emptyEmoji: {
-        fontSize: 64,
-        marginBottom: spacing.md,
-    },
+    emptyEmoji: { fontSize: 64, marginBottom: spacing.md },
     emptyTitle: {
         fontSize: 24,
         fontWeight: '900',
@@ -529,5 +543,43 @@ const styles = StyleSheet.create({
         marginTop: 12,
         fontWeight: '500',
         lineHeight: 22,
+    },
+    protocolToast: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        right: 20,
+        zIndex: 1000,
+        padding: spacing.md,
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1.5,
+        borderColor: colors.primary,
+        shadowColor: colors.primary,
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        alignItems: 'center',
+    },
+    toastGlow: {
+        position: 'absolute',
+        top: -20,
+        left: -20,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: colors.primary,
+        opacity: 0.2,
+    },
+    toastMsg: {
+        fontSize: 14,
+        fontWeight: '900',
+        color: colors.primary,
+        letterSpacing: 2,
+    },
+    toastSub: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        marginTop: 2,
+        fontWeight: '600',
     },
 });

@@ -80,7 +80,8 @@ BEGIN
       -- Recency: Ratings older than 30 days lose 70% of impact
       GREATEST(0.3, 1 - (EXTRACT(EPOCH FROM (NOW() - r.created_at)) / (30 * 24 * 3600))) AS recency_weight,
       -- Rater Gravity (Nosedive): High-index users have exponentially more power
-      POWER(4.0, COALESCE(rater.big_score, 2.5) - 3.5) AS rater_weight,
+      -- Cold-start: If rater has 0.0, we treat them as 2.5 (neutral influence)
+      POWER(4.0, (CASE WHEN COALESCE(rater.big_score, 0) = 0 THEN 2.5 ELSE rater.big_score END) - 3.5) AS rater_weight,
       -- Friction: Low scores from high users pull harder than high scores push up
       CASE 
         WHEN r.score < current_user_score AND current_user_score > 4.0 THEN 1.8 -- Downward drag for high-tier users
@@ -175,3 +176,10 @@ CREATE INDEX IF NOT EXISTS idx_passes_users ON interaction_passes(user_a, user_b
 CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_id);
 CREATE INDEX IF NOT EXISTS idx_ratings_pass ON ratings(pass_id);
 CREATE INDEX IF NOT EXISTS idx_users_score ON users(big_score DESC);
+
+-- ENABLE REALTIME FOR KEY TABLES
+-- Note: This is required for payload filters in client-side listeners
+BEGIN;
+  DROP PUBLICATION IF EXISTS supabase_realtime;
+  CREATE PUBLICATION supabase_realtime FOR TABLE connections, interaction_passes, ratings, users;
+COMMIT;
