@@ -129,8 +129,8 @@ ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE blocks ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can read all profiles" ON users FOR SELECT USING (true);
-CREATE POLICY "Users can update own profile" ON users FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Users can insert own profile" ON users FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON users FOR UPDATE USING (auth.uid() = id OR is_test = true);
+CREATE POLICY "Users can insert own profile" ON users FOR INSERT WITH CHECK (auth.uid() = id OR is_test = true);
 
 CREATE POLICY "Users can see own connections" ON connections FOR SELECT 
   USING (auth.uid() = user_a OR auth.uid() = user_b OR (SELECT is_test FROM users WHERE id = user_a) OR (SELECT is_test FROM users WHERE id = user_b));
@@ -144,13 +144,16 @@ CREATE POLICY "Users can see own passes" ON interaction_passes FOR SELECT
 CREATE POLICY "Users can create passes" ON interaction_passes FOR INSERT 
   WITH CHECK (auth.uid() = user_a OR (SELECT is_test FROM users WHERE id = user_a));
 
+CREATE POLICY "Users can update own passes" ON interaction_passes FOR UPDATE
+  USING (auth.uid() = user_a OR auth.uid() = user_b OR (SELECT is_test FROM users WHERE id = user_a) OR (SELECT is_test FROM users WHERE id = user_b));
+
 CREATE POLICY "Users can see revealed ratings" ON ratings FOR SELECT 
   USING (revealed = TRUE OR rater_id = auth.uid() OR (SELECT is_test FROM users WHERE id = rater_id));
 CREATE POLICY "Users can create ratings" ON ratings FOR INSERT 
   WITH CHECK (auth.uid() = rater_id OR (SELECT is_test FROM users WHERE id = rater_id));
 
 CREATE POLICY "Users can manage own blocks" ON blocks FOR ALL 
-  USING (auth.uid() = blocker_id);
+  USING (auth.uid() = blocker_id OR (SELECT is_test FROM users WHERE id = blocker_id));
 
 CREATE INDEX IF NOT EXISTS idx_connections_user_a ON connections(user_a);
 CREATE INDEX IF NOT EXISTS idx_connections_user_b ON connections(user_b);
