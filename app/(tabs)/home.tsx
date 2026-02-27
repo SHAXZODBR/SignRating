@@ -40,8 +40,44 @@ export default function HomeScreen() {
             };
 
             initHome();
-            const interval = setInterval(handleCheckNearby, 60000);
-            return () => clearInterval(interval);
+
+            // Real-time connections subscription
+            const connSub = supabase
+                .channel('connections_changes')
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'connections',
+                    filter: `user_b=eq.${user.id}`
+                }, () => fetchPendingRequests(user.id))
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'connections',
+                    filter: `user_a=eq.${user.id}`
+                }, () => fetchConnections(user.id))
+                .subscribe();
+
+            // Real-time interaction passes subscription
+            const passSub = supabase
+                .channel('passes_changes')
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'interaction_passes',
+                    filter: `user_b=eq.${user.id}`
+                }, (payload) => {
+                    Alert.alert('Protocol Interaction', 'A new handshake encounter has been initiated.');
+                    router.push(`/rate/${payload.new.id}`);
+                })
+                .subscribe();
+
+            const interval = setInterval(handleCheckNearby, 30000); // 30s check
+            return () => {
+                clearInterval(interval);
+                connSub.unsubscribe();
+                passSub.unsubscribe();
+            };
         }
     }, [user]);
 

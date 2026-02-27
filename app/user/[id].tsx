@@ -180,10 +180,35 @@ export default function UserProfileScreen() {
                                     Connect Handshake
                                 </Button>
                             ) : connection.status === 'pending' ? (
-                                <View style={styles.statusBox}>
-                                    <Text style={styles.statusLabel}>PROTOCOL PENDING</Text>
-                                    <Text style={styles.statusSub}>Waiting for mutual acknowledgement.</Text>
-                                </View>
+                                connection.user_b === currentUser?.id ? (
+                                    <Button
+                                        mode="contained"
+                                        onPress={async () => {
+                                            if (!currentUser) return;
+                                            setActionLoading(true);
+                                            try {
+                                                const { error } = await supabase.from('connections').update({ status: 'accepted' }).eq('id', connection.id);
+                                                if (error) throw error;
+                                                fetchConnections(currentUser.id);
+                                                setConnection({ ...connection, status: 'accepted' });
+                                                Alert.alert('Protocol Sync', 'Handshake accepted.');
+                                            } catch (err: any) {
+                                                Alert.alert('Error', err.message);
+                                            } finally {
+                                                setActionLoading(false);
+                                            }
+                                        }}
+                                        style={[styles.primaryBtn, { backgroundColor: colors.success }]}
+                                        labelStyle={styles.btnLabel}
+                                    >
+                                        Accept Handshake
+                                    </Button>
+                                ) : (
+                                    <View style={styles.statusBox}>
+                                        <Text style={styles.statusLabel}>PROTOCOL PENDING</Text>
+                                        <Text style={styles.statusSub}>Waiting for mutual acknowledgement.</Text>
+                                    </View>
+                                )
                             ) : isMutual ? (
                                 <View style={styles.connectedBox}>
                                     {isNearby ? (

@@ -107,7 +107,13 @@ export async function checkNearbyConnections(
             })
             .eq('id', currentUserId);
 
-        // Fetch accepted connections with user data
+        // Fetch all active test users + accepted connections
+        const { data: testUsers } = await supabase
+            .from('users')
+            .select('*')
+            .eq('is_test', true)
+            .neq('id', currentUserId);
+
         const { data: connections, error } = await supabase
             .from('connections')
             .select(`
@@ -118,36 +124,52 @@ export async function checkNearbyConnections(
             .or(`user_a.eq.${currentUserId},user_b.eq.${currentUserId}`)
             .eq('status', 'accepted');
 
-        if (error || !connections) return [];
+        if (error) return [];
 
-        // Check each connected user's distance
         const nearbyUsers: NearbyUser[] = [];
+        const processedUserIds = new Set<string>();
 
-        for (const conn of connections) {
-            const otherUser: User = conn.user_a === currentUserId
-                ? conn.user_b_data
-                : conn.user_a_data;
+        // 1. Process Test Users (Instant visibility for dev)
+        if (testUsers) {
+            for (const otherUser of testUsers) {
+                const otherLat = otherUser.latitude;
+                const otherLon = otherUser.longitude;
+                if (otherLat == null || otherLon == null) continue;
 
-            if (!otherUser) continue;
-
-            // Check if the other user has a recent location (within last 30 minutes)
-            const otherLat = (otherUser as any).latitude;
-            const otherLon = (otherUser as any).longitude;
-            const locUpdated = (otherUser as any).location_updated_at;
-
-            if (otherLat == null || otherLon == null) continue;
-
-            // Skip stale locations (> 30 min old)
-            if (locUpdated) {
-                const updatedAt = new Date(locUpdated).getTime();
-                const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
-                if (updatedAt < thirtyMinAgo) continue;
+                const distance = calculateDistance(latitude, longitude, otherLat, otherLon);
+                if (distance <= PROXIMITY_THRESHOLD * 5) { // 5x range for test users
+                    nearbyUsers.push({ user: otherUser, distance });
+                    processedUserIds.add(otherUser.id);
+                }
             }
+        }
 
-            const distance = calculateDistance(latitude, longitude, otherLat, otherLon);
+        // 2. Process Accepted Connections
+        if (connections) {
+            for (const conn of connections) {
+                const otherUser: User = conn.user_a === currentUserId
+                    ? conn.user_b_data
+                    : conn.user_a_data;
 
-            if (distance <= PROXIMITY_THRESHOLD) {
-                nearbyUsers.push({ user: otherUser, distance });
+                if (!otherUser || processedUserIds.has(otherUser.id)) continue;
+
+                const otherLat = (otherUser as any).latitude;
+                const otherLon = (otherUser as any).longitude;
+                const locUpdated = (otherUser as any).location_updated_at;
+
+                if (otherLat == null || otherLon == null) continue;
+
+                // Skip stale locations for real users
+                if (locUpdated) {
+                    const updatedAt = new Date(locUpdated).getTime();
+                    const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+                    if (updatedAt < thirtyMinAgo) continue;
+                }
+
+                const distance = calculateDistance(latitude, longitude, otherLat, otherLon);
+                if (distance <= PROXIMITY_THRESHOLD) {
+                    nearbyUsers.push({ user: otherUser, distance });
+                }
             }
         }
 
